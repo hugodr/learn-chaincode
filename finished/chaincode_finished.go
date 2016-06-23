@@ -77,12 +77,12 @@ func (t *SimpleChaincode) Query(stub *shim.ChaincodeStub, function string, args 
 
 // give - invoke function to give key/value pair
 func (t *SimpleChaincode) give(stub *shim.ChaincodeStub, args []string) ([]byte, error) {
-	var Issuer string, Owner string
+	var Issuer, Owner string
 	var err error
 	fmt.Println("running write()")
 
-	if len(args) != 3 {
-		return nil, errors.New("Incorrect number of arguments. Expecting 3. name of the variable and value to set")
+	if len(args) != 2 {
+		return nil, errors.New("Incorrect number of arguments. Expecting 2. name of the variable and value to set")
 	}
 
 	Issuer = args[0]                            //rename for funsies
@@ -96,14 +96,16 @@ func (t *SimpleChaincode) give(stub *shim.ChaincodeStub, args []string) ([]byte,
 
 // Owner - query function to Owner key/value pair
 func (t *SimpleChaincode) read(stub *shim.ChaincodeStub, args []string) ([]byte, error) {
+	var Owner
 	var jsonResp string
 	var err error
 
 	if len(args) > 0 {
 		return nil, errors.New("Incorrect number of arguments. Expecting name of the var to query")
 	}
-
-	valAsbytes, err := stub.GetState(Owner)
+	if(Owner == stub.GetState(Owner)){
+		valAsbytes, err := stub.GetState(Owner)
+	}
 	if err != nil {
 		jsonResp = "{\"Error\":\"Failed to get state for " + name + "\"}"
 		return nil, errors.New(jsonResp)
