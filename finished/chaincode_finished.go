@@ -17,12 +17,8 @@ limitations under the License.
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
-	"strconv"
-	"time"
-
 	"github.com/openblockchain/obc-peer/openchain/chaincode/shim"
 )
 
@@ -79,9 +75,9 @@ func (t *SimpleChaincode) Query(stub *shim.ChaincodeStub, function string, args 
 	return nil, errors.New("Received unknown function query")
 }
 
-// write - invoke function to write key/value pair
-func (t *SimpleChaincode) write(stub *shim.ChaincodeStub, args []string) ([]byte, error) {
-	var name, value1 string, value2 string
+// give - invoke function to give key/value pair
+func (t *SimpleChaincode) give(stub *shim.ChaincodeStub, args []string) ([]byte, error) {
+	var Issuer string, Owner string
 	var err error
 	fmt.Println("running write()")
 
@@ -89,27 +85,25 @@ func (t *SimpleChaincode) write(stub *shim.ChaincodeStub, args []string) ([]byte
 		return nil, errors.New("Incorrect number of arguments. Expecting 3. name of the variable and value to set")
 	}
 
-	name = args[0]                            //rename for funsies
-	value1 = args[1]
-	value2 = args[2]
-	err = stub.PutState(name, []byte(value1))//write the variable into the chaincode state
+	Issuer = args[0]                            //rename for funsies
+	Owner = args[1]
+	err = stub.PutState(Issuer, Owner)//write the variable into the chaincode state
 	if err != nil {
 		return nil, err
 	}
 	return nil, nil
 }
 
-// read - query function to read key/value pair
+// Owner - query function to Owner key/value pair
 func (t *SimpleChaincode) read(stub *shim.ChaincodeStub, args []string) ([]byte, error) {
-	var name, jsonResp string
+	var jsonResp string
 	var err error
 
-	if len(args) != 1 {
+	if len(args) > 0 {
 		return nil, errors.New("Incorrect number of arguments. Expecting name of the var to query")
 	}
 
-	name = args[0]
-	valAsbytes, err := stub.GetState(name)
+	valAsbytes, err := stub.GetState(Owner)
 	if err != nil {
 		jsonResp = "{\"Error\":\"Failed to get state for " + name + "\"}"
 		return nil, errors.New(jsonResp)
