@@ -17,10 +17,13 @@ limitations under the License.
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
+	"time"
 
-	"github.com/hyperledger/fabric/core/chaincode/shim"
+	"github.com/openblockchain/obc-peer/openchain/chaincode/shim"
 )
 
 // SimpleChaincode example simple Chaincode implementation
