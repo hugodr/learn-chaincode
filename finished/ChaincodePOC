@@ -1,0 +1,402 @@
+package main
+
+import (
+	"errors"
+	"fmt"
+	"strconv"
+	"strings"
+	"github.com/hyperledger/fabric/core/chaincode/shim"
+	"encoding/json"
+	"crypto/x509"
+	"encoding/pem"
+	"net/http"
+	"net/url"
+  "io/ioutil"
+	"regexp"
+
+)
+
+//==============================================================================================================================
+//	 Type de participant
+//==============================================================================================================================
+const   BANQUES     =  1
+const   CLIENTS     =  2
+const   VENDEURS    =  3
+
+
+//==============================================================================================================================
+//	 ETAT du TICKET Permet de définir les possibilités d'échange
+//==============================================================================================================================
+const   ETAT_ACTIVE		=  1
+const   ETAT_UTILISE	=  2
+const   ETAT_ARCHIVE	=  3
+
+//==============================================================================================================================
+//	 Structure Definitions
+//==============================================================================================================================
+//	Chaincode - A blank struct for use with Shim (A HyperLedger included go file used for get/put state
+//				and other HyperLedger functions)
+//==============================================================================================================================
+type  SimpleChaincode struct {
+}
+
+
+
+//==============================================================================================================================
+//	Compte - Defines the structure for a Compte object. JSON on right tells it what JSON fields to map to
+//			  that element when reading a JSON object into the struct e.g. JSON make -> Struct Make.
+//==============================================================================================================================
+//type Compte struct {
+//	Id              string `json:"id"`          \\ ID du compte
+//	Tids            []string `json:"tids"`      \\ ID des tickets
+//}
+
+
+//==============================================================================================================================
+//	Ticket - Defines the structure for a Ticket object. JSON on right tells it what JSON fields to map to
+//			  that element when reading a JSON object into the struct e.g. JSON make -> Struct Make.
+//==============================================================================================================================
+type Ticket struct {
+	Tid              string `json:"tid"`         \\ ID du ticket
+	Owner          	 string `json:"owner"`       \\ ID du proprietaires
+	Issuer           string `json:"issuer"`      \\ ID de l'ancien proprietaire Preowner
+	IssueDate        string `json:"issueDate"`   \\ Date d'aquisition du ticket
+	State            string `json:"state"`       \\ Etat du ticket
+}
+
+//==============================================================================================================================
+//	ECertResponse - Struct for storing the JSON response of retrieving an ECert. JSON OK -> Struct OK
+//==============================================================================================================================
+type ECertResponse struct {
+	OK string `json:"OK"`
+}
+
+//==============================================================================================================================
+//	Init Function - Called when the user deploys the chaincode
+//==============================================================================================================================
+func (t *SimpleChaincode) Init(stub *shim.ChaincodeStub, function string, args []string) ([]byte, error) {
+
+	//Args
+	//				0
+	//			peer_address
+
+
+	err := stub.PutState("Peer_Address", []byte(args[0]))
+															if err != nil { return nil, errors.New("Error storing peer address") }
+
+	return nil, nil
+}
+
+//==============================================================================================================================
+//	 General Functions
+//==============================================================================================================================
+//	 get_ecert - Takes the name passed and calls out to the REST API for HyperLedger to retrieve the ecert
+//				 for that user. Returns the ecert as retrived including html encoding.
+//==============================================================================================================================
+func (t *SimpleChaincode) get_ecert(stub *shim.ChaincodeStub, name string) ([]byte, error) {
+
+	var cert ECertResponse
+
+	peer_address, err := stub.GetState("Peer_Address")
+															if err != nil { return nil, errors.New("Error retrieving peer address") }
+
+	response, err := http.Get("http://"+string(peer_address)+"/registrar/"+name+"/ecert") 	// Calls out to the HyperLedger REST API to get the ecert of the user with that name
+
+															if err != nil { return nil, errors.New("Error calling ecert API") }
+
+	defer response.Body.Close()
+	contents, err := ioutil.ReadAll(response.Body)					// Read the response from the http callout into the variable contents
+
+															if err != nil { return nil, errors.New("Could not read body") }
+
+	err = json.Unmarshal(contents, &cert)
+
+															if err != nil { return nil, errors.New("Could not retrieve ecert for user: "+name) }
+
+	return []byte(string(cert.OK)), nil
+}
+
+//==============================================================================================================================
+//	 get_caller - Retrieves the username of the user who invoked the chaincode.
+//				  Returns the username as a string.
+//==============================================================================================================================
+
+
+func (t *SimpleChaincode) get_username(stub *shim.ChaincodeStub) (string, error) {
+
+	bytes, err := stub.GetCallerCertificate();
+															if err != nil { return "", errors.New("Couldn't retrieve caller certificate") }
+	x509Cert, err := x509.ParseCertificate(bytes);				// Extract Certificate from result of GetCallerCertificate
+															if err != nil { return "", errors.New("Couldn't parse certificate")	}
+
+	return x509Cert.Subject.CommonName, nil
+}
+
+//==============================================================================================================================
+//	 check_affiliation - Takes an ecert as a string, decodes it to remove html encoding then parses it and checks the
+// 				  		certificates common name. The affiliation is stored as part of the common name.
+//==============================================================================================================================
+
+func (t *SimpleChaincode) check_affiliation(stub *shim.ChaincodeStub, cert string) (int, error) {
+
+	decodedCert, err := url.QueryUnescape(cert);    				// make % etc normal //
+
+															if err != nil { return -1, errors.New("Could not decode certificate") }
+
+	pem, _ := pem.Decode([]byte(decodedCert))           				// Make Plain text   //
+
+	x509Cert, err := x509.ParseCertificate(pem.Bytes);				// Extract Certificate from argument //
+
+															if err != nil { return -1, errors.New("Couldn't parse certificate")	}
+
+	cn := x509Cert.Subject.CommonName
+
+	res := strings.Split(cn,"\\")
+
+	affiliation, _ := strconv.Atoi(res[2])
+
+	return affiliation, nil
+}
+
+//==============================================================================================================================
+//	 get_caller_data - Calls the get_ecert and check_role functions and returns the ecert and role for the
+//					 name passed.
+//==============================================================================================================================
+
+func (t *SimpleChaincode) get_caller_data(stub *shim.ChaincodeStub) (string, int, error){
+
+	user, err := t.get_username(stub)
+																		if err != nil { return "", -1, err }
+
+	ecert, err := t.get_ecert(stub, user);
+																		if err != nil { return "", -1, err }
+
+	affiliation, err := t.check_affiliation(stub,string(ecert));
+																		if err != nil { return "", -1, err }
+
+	return user, affiliation, nil
+}
+
+//==============================================================================================================================
+//	 retrieve_tid - Gets the state of the data at tid in the ledger then converts it from the stored
+//					JSON into the Ticket struct for use in the contract. Returns the Ticket struct.
+//					Returns empty v if it errors.
+//==============================================================================================================================
+func (t *SimpleChaincode) retrieve_tid(stub *shim.ChaincodeStub, tid string) (Ticket, error) {
+
+	var v Ticket
+
+	bytes, err := stub.GetState(tid)	;
+
+															if err != nil {	fmt.Printf("RETRIEVE_V5C: Failed to invoke Ticket_code: %s", err); return v, errors.New("RETRIEVE_V5C: Error retrieving Ticket with tid = " + tid) }
+
+	err = json.Unmarshal(bytes, &v)	;
+
+															if err != nil {	fmt.Printf("RETRIEVE_V5C: Corrupt Ticket record "+string(bytes)+": %s", err); return v, errors.New("RETRIEVE_V5C: Corrupt Ticket record"+string(bytes))	}
+
+	return v, nil
+}
+
+//==============================================================================================================================
+// save_changes - Writes to the ledger the Ticket struct passed in a JSON format. Uses the shim file's
+//				  method 'PutState'.
+//==============================================================================================================================
+func (t *SimpleChaincode) save_changes(stub *shim.ChaincodeStub, v Ticket) (bool, error) {
+
+	bytes, err := json.Marshal(v)
+
+																if err != nil { fmt.Printf("SAVE_CHANGES: Error converting Ticket record: %s", err); return false, errors.New("Error converting Ticket record") }
+
+	err = stub.PutState(v.tid, bytes)
+
+																if err != nil { fmt.Printf("SAVE_CHANGES: Error storing Ticket record: %s", err); return false, errors.New("Error storing Ticket record") }
+
+	return true, nil
+}
+
+//==============================================================================================================================
+//	 Router Functions
+//==============================================================================================================================
+//	Invoke - Called on chaincode invoke. Takes a function name passed and calls that function. Converts some
+//		  initial arguments passed to other things for use in the called function e.g. name -> ecert
+//==============================================================================================================================
+func (t *SimpleChaincode) Invoke(stub *shim.ChaincodeStub, function string, args []string) ([]byte, error) {
+
+	caller, caller_affiliation, err := t.get_caller_data(stub)
+
+	if err != nil { return nil, errors.New("Error retrieving caller information")}
+
+
+	if function == "create_Ticket" { return t.create_Ticket(stub, caller, caller_affiliation, args[0])
+	} else { 																				// If the function is not a create then there must be a Ticket so we need to retrieve the Ticket.
+                argPos := 1
+                if function == "transfer_Ticket" { return t.transfer_Ticket(stub, caller, caller_affiliation, tid, args[0])
+            }
+
+            v, err := t.retrieve_tid(stub, args[argPos])
+            if err != nil { fmt.Printf("INVOKE: Error retrieving tid: %s", err); return nil, errors.New("Error retrieving tid") }
+
+    }
+}
+//=================================================================================================================================
+//	Query - Called on chaincode query. Takes a function name passed and calls that function. Passes the
+//  		initial arguments passed are passed on to the called function.
+//=================================================================================================================================
+func (t *SimpleChaincode) Query(stub *shim.ChaincodeStub, function string, args []string) ([]byte, error) {
+
+	if len(args) != 1 { fmt.Printf("Incorrect number of arguments passed"); return nil, errors.New("QUERY: Incorrect number of arguments passed") }
+
+	v, err := t.retrieve_tid(stub, args[0])
+																							if err != nil { fmt.Printf("QUERY: Error retrieving tid: %s", err); return nil, errors.New("QUERY: Error retrieving tid "+err.Error()) }
+
+	caller, caller_affiliation, err := t.get_caller_data(stub)
+
+	if function == "get_all" {
+			return t.get_all(stub, v, caller, caller_affiliation)
+	}
+																							return nil, errors.New("Received unknown function invocation")
+}
+
+//=================================================================================================================================
+//	 Create Function
+//=================================================================================================================================
+//	 Create Ticket - Creates the initial JSON for the Ticket and then saves it to the ledger.
+//=================================================================================================================================
+func (t *SimpleChaincode) create_vehicle(stub *shim.ChaincodeStub, caller string, caller_affiliation int, tid string) ([]byte, error) {
+
+	var v Ticket
+
+	tid            := "\"Tid\":\""+Tid+"\", "							// Variables to define the JSON
+	owner          := "\"Owner\":\""+caller+"\", "
+	issuer         := "\"Issuer\":\"UNDEFINED\", "
+	issuerDate     := "\"IssuerDate\":\"UNDEFINED\", "
+	status         := "\"Status\":1, "
+
+	ticket_json := "{"+tid+owner+issuer+issuerDate+status+"}" 	// Concatenates the variables to create the total JSON object
+
+	matched, err := regexp.Match("^[A-z][A-z][0-9]{7}", []byte(tid))  				// matched = true if the tid passed fits format of two letters followed by seven digits
+
+																		if err != nil { fmt.Printf("CREATE_VEHICLE: Invalid v5cID: %s", err); return nil, errors.New("Invalid v5cID") }
+
+	if 				tid     == "" 	 ||
+					matched == false    {
+																		fmt.Printf("CREATE_Ticket: Invalid tid provided");
+																		return nil, errors.New("Invalid tid provided")
+	}
+
+	err = json.Unmarshal([]byte(ticket_json), &v)					    // Convert the JSON defined above into a Ticket object for go
+
+																		if err != nil { return nil, errors.New("Invalid JSON object") }
+
+	record, err := stub.GetState(v.tid) 								// If not an error then a record exists so cant create a new car with this tid as it must be unique
+
+																		if record != nil { return nil, errors.New("Ticket already exists") }
+
+	if 	caller_affiliation != BANQUES {						    	// Only the regulator can create a new tid
+
+																		return nil, errors.New("Permission Denied")
+	}
+
+	_, err  = t.save_changes(stub, v)
+
+																		if err != nil { fmt.Printf("CREATE_Ticket: Error saving changes: %s", err); return nil, errors.New("Error saving changes") }
+
+	return nil, nil
+
+}
+
+//=================================================================================================================================
+//	 Transfer Functions
+//=================================================================================================================================
+//	 authority_to_manufacturer
+//=================================================================================================================================
+func (t *SimpleChaincode) transfer_Ticket(stub *shim.ChaincodeStub, v Ticket, caller string, caller_affiliation int, recipient_name string, recipient_affiliation int) ([]byte, error) {
+
+	if      ((caller_affilisation != (recipient_affilisation + 1)) || ((caller_affilisation == 3 && recipient_affilisation == 1)) || (caller_affilisation == recipient_affilisation == 2)){   // Verification Droit
+        fmt.Printf("Transfer Forbiden")
+	}
+	else if (v.Status				== ETAT_ACTIVE		&&
+			v.Owner							== caller			&&
+			caller_affiliation		== BANQUES   		&&
+			recipient_affiliation	== CLIENTS		    &&)
+            {		// If the roles and users are ok
+
+					v.Owner  			= recipient_name		// then make the owner the new owner
+					v.Issuer 			= caller			    // make the last owner
+					v.IssuerDate 	= time.Now()       // write date of the trade
+
+	}
+    else if (v.Status				== ETAT_ACTIVE		&&
+			v.Owner								== caller			&&
+			caller_affiliation		== CLIENTS   		&&
+			recipient_affiliation	== CLIENTS		    &&)
+            {		// If the roles and users are ok
+
+					v.Owner  			= recipient_name		// then make the owner the new owner
+					v.Issuer 			= caller			    // make the last owner
+					v.IssuerDate 	= time.Now()       // write date of the trade
+
+	}
+    else if (v.Status				== ETAT_ACTIVE		&&
+			v.Owner								== caller			&&
+			caller_affiliation		== CLIENTS   		&&
+			recipient_affiliation	== VENDEURS		    &&)
+            {		// If the roles and users are ok
+
+					v.Owner  			= recipient_name		// then make the owner the new owner
+					v.Issuer 			= caller			    // make the last owner
+					v.IssuerDate 	= time.Now()       // write date of the trade
+					v.State 			= ETAT_UTILISE
+
+	}
+    else if (v.Status				== ETAT_UTILISE		&&
+			v.Owner								== caller			&&
+			caller_affiliation		== VENDEURS   		&&
+			recipient_affiliation	== BANQUES		    &&)
+            {		// If the roles and users are ok
+
+					v.Owner  			= recipient_name		// then make the owner the new owner
+					v.Issuer 			= caller			    // make the last owner
+					v.IssuerDate 	= time.Now()       // write date of the trade
+					v.State 			= ETAT_ARCHIVE
+
+	}
+
+	_, err := t.save_changes(stub, v)						// Write new state
+
+															if err != nil {	fmt.Printf("Transfer ISSUE: Error saving changes: %s", err); return nil, errors.New("Error saving changes")	}
+
+	return nil, nil									// We are Done
+
+}
+//=================================================================================================================================
+//	 Read Functions
+//=================================================================================================================================
+//	 get_all
+//=================================================================================================================================
+func (t *SimpleChaincode) get_all(stub *shim.ChaincodeStub, v Ticket, caller string, caller_affiliation int) ([]byte, error) {
+
+	bytes, err := json.Marshal(v)
+
+																if err != nil { return nil, errors.New("GET_ALL: Invalid Ticket") }
+
+	if 		v.owner							== caller		||
+				v.issuer						== caller		||
+				caller_affiliation	== BANQUES	{
+
+					return bytes, nil
+	} else {
+																return nil, errors.New("Permission Denied")
+	}
+
+}
+
+//=================================================================================================================================
+//	 Main - main - Starts up the chaincode
+//=================================================================================================================================
+func main() {
+
+	err := shim.Start(new(SimpleChaincode))
+
+															if err != nil { fmt.Printf("Error starting Chaincode: %s", err) }
+}
