@@ -47,8 +47,8 @@ type  SimpleChaincode struct {
 //			  that element when reading a JSON object into the struct e.g. JSON make -> Struct Make.
 //==============================================================================================================================
 //type Compte struct {
-//	Id              string `json:"id"`          \\ ID du compte
-//	Tids            []string `json:"tids"`      \\ ID des tickets
+//	Id              string `json:"id"`          // ID du compte
+//	Tids            []string `json:"tids"`      // ID des tickets
 //}
 
 
@@ -57,11 +57,11 @@ type  SimpleChaincode struct {
 //			  that element when reading a JSON object into the struct e.g. JSON make -> Struct Make.
 //==============================================================================================================================
 type Ticket struct {
-	Tid              string `json:"tid"`         \\ ID du ticket
-	Owner          	 string `json:"owner"`       \\ ID du proprietaires
-	Issuer           string `json:"issuer"`      \\ ID de l'ancien proprietaire Preowner
-	IssueDate        string `json:"issueDate"`   \\ Date d'aquisition du ticket
-	State            string `json:"state"`       \\ Etat du ticket
+	Tid              string `json:"tid"`         // ID du ticket
+	Owner          	 string `json:"owner"`       // ID du proprietaires
+	Issuer           string `json:"issuer"`      // ID de l'ancien proprietaire Preowner
+	IssueDate        string `json:"issueDate"`   // Date d'aquisition du ticket
+	State            string `json:"state"`       // Etat du ticket
 }
 
 //==============================================================================================================================
@@ -151,7 +151,7 @@ func (t *SimpleChaincode) check_affiliation(stub *shim.ChaincodeStub, cert strin
 
 	cn := x509Cert.Subject.CommonName
 
-	res := strings.Split(cn,"\\")
+	res := strings.Split(cn,"//")
 
 	affiliation, _ := strconv.Atoi(res[2])
 
