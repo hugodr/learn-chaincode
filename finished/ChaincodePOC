@@ -57,11 +57,11 @@ type  SimpleChaincode struct {
 //			  that element when reading a JSON object into the struct e.g. JSON make -> Struct Make.
 //==============================================================================================================================
 type Ticket struct {
-	Tid              string `json:"tid"`         // ID du ticket
-	Owner          	 string `json:"owner"`       // ID du proprietaires
-	Issuer           string `json:"issuer"`      // ID de l'ancien proprietaire Preowner
-	IssueDate        string `json:"issueDate"`   // Date d'aquisition du ticket
-	State            string `json:"state"`       // Etat du ticket
+	Tid              string `json:"tid"`         		// ID du ticket
+	Owner          	 string `json:"owner"`       		// ID du proprietaires
+	LastOwner        string `json:"lastowner"`      	// ID de l'ancien proprietaire Preowner
+	AquisitionDate   string `json:"aquisitiondate"`   	// Date d'aquisition du ticket
+	State            string `json:"state"`       		// Etat du ticket
 }
 
 //==============================================================================================================================
@@ -266,17 +266,17 @@ func (t *SimpleChaincode) create_ticket(stub *shim.ChaincodeStub, caller string,
 
 	var v Ticket
 
-	tid            := "\"Tid\":\""+Tid+"\", "							// Variables to define the JSON
-	owner          := "\"Owner\":\""+caller+"\", "
-	issuer         := "\"Issuer\":\"UNDEFINED\", "
-	issuerDate     := "\"IssuerDate\":\"UNDEFINED\", "
-	status         := "\"Status\":1, "
+	tid		:= "\"Tid\":\""+Tid+"\", "							// Variables to define the JSON
+	owner		:= "\"Owner\":\""+caller+"\", "
+	LastOwner	:= "\"LastOwner\":\"UNDEFINED\", "
+	AquisitionDate	:= "\"AquisitionDate\":\"UNDEFINED\", "
+	status         	:= "\"Status\":1, "
 
-	ticket_json := "{"+tid+owner+issuer+issuerDate+status+"}" 	// Concatenates the variables to create the total JSON object
+	ticket_json := "{"+tid+owner+lastowner+aquisitiondate+status+"}" 	// Concatenates the variables to create the total JSON object
 
 	matched, err := regexp.Match("^[A-z][A-z][0-9]{7}", []byte(tid))  				// matched = true if the tid passed fits format of two letters followed by seven digits
 
-																		if err != nil { fmt.Printf("CREATE_VEHICLE: Invalid v5cID: %s", err); return nil, errors.New("Invalid v5cID") }
+																		if err != nil { fmt.Printf("CREATE_TICKET: Invalid Tid: %s", err); return nil, errors.New("Invalid v5cID") }
 
 	if 				tid     == "" 	 ||
 					matched == false    {
@@ -308,56 +308,54 @@ func (t *SimpleChaincode) create_ticket(stub *shim.ChaincodeStub, caller string,
 //=================================================================================================================================
 //	 Transfer Functions
 //=================================================================================================================================
-//	 authority_to_manufacturer
-//=================================================================================================================================
 func (t *SimpleChaincode) transfer_Ticket(stub *shim.ChaincodeStub, v Ticket, caller string, caller_affiliation int, recipient_name string, recipient_affiliation int) ([]byte, error) {
 
 	if      ((caller_affilisation != (recipient_affilisation + 1)) || ((caller_affilisation == 3 && recipient_affilisation == 1)) || (caller_affilisation == recipient_affilisation == 2)){   // Verification Droit
         fmt.Printf("Transfer Forbiden")
 	}
 	else if (v.Status				== ETAT_ACTIVE		&&
-			v.Owner							== caller			&&
+			v.Owner				== caller		&&
 			caller_affiliation		== BANQUES   		&&
-			recipient_affiliation	== CLIENTS		    &&)
+			recipient_affiliation		== CLIENTS		&&)
             {		// If the roles and users are ok
 
 					v.Owner  			= recipient_name		// then make the owner the new owner
-					v.Issuer 			= caller			    // make the last owner
-					v.IssuerDate 	= time.Now()       // write date of the trade
+					v.LastOwner 			= caller			// make the last owner
+					v.AquisitionDate 		= time.Now()       		// write date of the trade
 
 	}
-    else if (v.Status				== ETAT_ACTIVE		&&
-			v.Owner								== caller			&&
+    else if (		v.Status			== ETAT_ACTIVE		&&
+			v.Owner				== caller		&&
 			caller_affiliation		== CLIENTS   		&&
-			recipient_affiliation	== CLIENTS		    &&)
+			recipient_affiliation		== CLIENTS		&&)
             {		// If the roles and users are ok
 
 					v.Owner  			= recipient_name		// then make the owner the new owner
-					v.Issuer 			= caller			    // make the last owner
-					v.IssuerDate 	= time.Now()       // write date of the trade
+					v.LastOwner 			= caller			// make the last owner
+					v.AquisitionDate 		= time.Now()       		// write date of the trade
 
 	}
-    else if (v.Status				== ETAT_ACTIVE		&&
-			v.Owner								== caller			&&
+    else if (		v.Status			== ETAT_ACTIVE		&&
+			v.Owner				== caller		&&
 			caller_affiliation		== CLIENTS   		&&
-			recipient_affiliation	== VENDEURS		    &&)
+			recipient_affiliation		== VENDEURS		&&)
             {		// If the roles and users are ok
 
 					v.Owner  			= recipient_name		// then make the owner the new owner
-					v.Issuer 			= caller			    // make the last owner
-					v.IssuerDate 	= time.Now()       // write date of the trade
+					v.LastOwner 			= caller			// make the last owner
+					v.AquisitionDate 		= time.Now()       		// write date of the trade
 					v.State 			= ETAT_UTILISE
 
 	}
-    else if (v.Status				== ETAT_UTILISE		&&
-			v.Owner								== caller			&&
+    else if (		v.Status			== ETAT_UTILISE		&&
+			v.Owner				== caller		&&
 			caller_affiliation		== VENDEURS   		&&
-			recipient_affiliation	== BANQUES		    &&)
+			recipient_affiliation		== BANQUES		&&)
             {		// If the roles and users are ok
 
 					v.Owner  			= recipient_name		// then make the owner the new owner
-					v.Issuer 			= caller			    // make the last owner
-					v.IssuerDate 	= time.Now()       // write date of the trade
+					v.LastOwner 			= caller			// make the last owner
+					v.AquisitionDate 		= time.Now()       		// write date of the trade
 					v.State 			= ETAT_ARCHIVE
 
 	}
@@ -381,7 +379,7 @@ func (t *SimpleChaincode) get_all(stub *shim.ChaincodeStub, v Ticket, caller str
 																if err != nil { return nil, errors.New("GET_ALL: Invalid Ticket") }
 
 	if 		v.owner							== caller		||
-				v.issuer						== caller		||
+				v.lastowner					== caller		||
 				caller_affiliation	== BANQUES	{
 
 					return bytes, nil
