@@ -27,7 +27,7 @@ const   VENDEURS    =  3
 //==============================================================================================================================
 //	 ETAT du TICKET Permet de définir les possibilités d'échange
 //==============================================================================================================================
-const   ETAT_ACTIVE		=  1
+const   ETAT_ACTIVE	=  1
 const   ETAT_UTILISE	=  2
 const   ETAT_ARCHIVE	=  3
 
@@ -262,7 +262,7 @@ func (t *SimpleChaincode) Query(stub *shim.ChaincodeStub, function string, args 
 //=================================================================================================================================
 //	 Create Ticket - Creates the initial JSON for the Ticket and then saves it to the ledger.
 //=================================================================================================================================
-func (t *SimpleChaincode) create_vehicle(stub *shim.ChaincodeStub, caller string, caller_affiliation int, tid string) ([]byte, error) {
+func (t *SimpleChaincode) create_ticket(stub *shim.ChaincodeStub, caller string, caller_affiliation int, tid string) ([]byte, error) {
 
 	var v Ticket
 
